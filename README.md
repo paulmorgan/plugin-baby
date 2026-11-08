@@ -1,21 +1,37 @@
 # Plugin Baby
 
-A local, personal macOS app for managing your audio plugins. Phase 1.
+A local, personal macOS app for managing, auditioning, and organizing your audio
+plugins. Built with SwiftUI + AppKit + AVFoundation. Everything stays on your Mac —
+there is no account, no network, and no telemetry.
 
-## What it does (Phase 1)
+> The name is a nod to Muse's "Plug In Baby." The app's artwork and theme are original.
 
-- **Catalog & search** — scans `~/Library/Audio/Plug-Ins` for Audio Unit (`.component`),
-  VST3, VST, and CLAP plugins; shows name, manufacturer, format, version, architecture,
-  and size; search and filter by format.
-- **Chains / presets** — group plugins into named, ordered chains; saved locally.
-- **Audition** — play an audio sample through an **Audio Unit effect** and A/B it with a
-  bypass toggle. (VST3/CLAP hosting is a later phase — see `DESIGN.md`.)
-- **Archive / delete / restore** — move a plugin out of `~/Library` into a local archive
-  (recoverable), restore it to its original location, or delete it to the **Trash**.
-  Archive-first: nothing is destroyed without a recoverable copy.
+## What it does
 
-Scope is the **user domain only** (`~/Library/Audio/Plug-Ins`); no admin rights needed.
-System `/Library` plugins are a Phase 2 item.
+**Catalog & search**
+Scans both `~/Library/Audio/Plug-Ins` (User) and `/Library/Audio/Plug-Ins` (System)
+for Audio Unit (`.component`), VST3, VST, and CLAP plugins. Shows name, manufacturer,
+format, **where** it lives (User/System), version, architecture (Intel / Apple
+Silicon / Universal), code-sign status, and size. Search and filter by format; reveal
+any plugin in Finder.
+
+**Audition**
+Load an **Audio Unit** and hear it:
+- **Effects** (`aufx`/`aumf`) process an audio sample you choose, with an A/B **bypass**
+  toggle.
+- **Instruments** (`aumu`) are played with a test MIDI note.
+- **Open editor** shows the plugin's own interface in its own window, sized to the
+  plugin's real UI.
+
+**Chains / presets**
+Group plugins into named, ordered chains with notes, saved locally.
+
+**Archive / restore / delete**
+Move a plugin out of its plugins folder into a local archive (recoverable), restore it
+to its original location, or send it to the **Trash**. Archive-first: nothing is
+destroyed without a recoverable copy. Archiving or restoring a **System** (`/Library`)
+plugin prompts for admin rights via the standard macOS dialog; the archived copy is
+handed back to your user account so later restore/delete need no further prompt.
 
 ## Build & run
 
@@ -25,19 +41,34 @@ open build/PluginBaby.app
 ```
 
 `build.sh` compiles the Swift sources directly with `swiftc` and assembles a `.app`
-bundle. It does **not** use SwiftPM, because the standalone Command Line Tools on this
-machine ship a broken SwiftPM manifest library (`swift build` fails to link the
-manifest). `Package.swift` is included for when full **Xcode** is installed — then you
-can open the package and build/run from Xcode, and raise the deployment target to
-macOS 15.
+bundle. It deliberately does **not** use SwiftPM: the standalone Command Line Tools on
+the development machine ship a broken SwiftPM manifest library (`swift build` fails to
+link the manifest). `Package.swift` is kept for when full **Xcode** is installed — then
+you can open the package, build/run from Xcode, and raise the deployment target to
+macOS 15 (Sequoia), the intended minimum.
 
-Requirements: the Xcode Command Line Tools (`xcode-select --install`). Builds for the
+**Requirements:** Xcode Command Line Tools (`xcode-select --install`). Builds for the
 Mac's native architecture.
+
+## App icon
+
+The icon is generated from code (no bundled image assets):
+
+```bash
+./make-icon.sh    # Tools/MakeIcon.swift -> Resources/AppIcon.icns
+```
 
 ## Where your data lives
 
+Plugin Baby stores everything under one folder, picking the first writable location
+from this list (so it still works if `~/Library/Application Support` is misconfigured):
+
+1. `~/Library/Application Support/Plugin Baby/`
+2. `~/Library/Plugin Baby/`
+3. `~/.plugin-baby/`
+
 ```
-~/Library/Application Support/Plugin Baby/
+<data folder>/
   chains.json             your chains
   archive/                archived plugin bundles
   archive-manifest.json   record of what's archived + where to restore it
@@ -50,21 +81,38 @@ Mac's native architecture.
 Sources/PluginBaby/
   PluginBabyApp.swift        app entry
   AppModel.swift             central state + operations
-  Models/                    Plugin, PluginFormat, Architecture, Chain, ArchiveEntry
+  Theme.swift                colors, wordmark, brand gradient
+  Models/                    Plugin, PluginFormat, PluginDomain, Architecture,
+                             Chain, ArchiveEntry
   Services/
-    PluginScanner.swift      filesystem scan + lipo/codesign metadata
-    AuditionEngine.swift      AVAudioEngine host for AU effects
-    AudioComponentDescriptionReader.swift
-    ArchiveManager.swift     move / restore / trash with a manifest
-    Persistence.swift        JSON storage
-    Shell.swift              run lipo/codesign/xattr
-  Views/                     Catalog, Chains, Audition, Archive
+    PluginScanner.swift        filesystem scan (User + System) + lipo/codesign metadata
+    AuditionEngine.swift       AVAudioEngine host for AU effects & instruments + editor
+    AudioComponentDescriptionReader.swift   classify AU effect vs instrument
+    ArchiveManager.swift       move / restore / trash with a manifest
+    PrivilegedFileOps.swift    admin-authorized moves for /Library plugins
+    Persistence.swift          JSON storage with writable-location fallback
+    Shell.swift                run lipo/codesign/xattr
+  Views/                     Catalog, Chains, Audition, Archive, ContentView
+Tools/MakeIcon.swift         generates the app icon
+Verify/main.swift            headless end-to-end check (scan + archive round-trip + render)
+DESIGN.md                    design doc and locked decisions
 ```
 
 ## Notes & limits
 
-- AU auditioning covers **effect** units (`aufx`/`aumf`). Instruments need a test-MIDI
-  source (Phase 2).
-- Auditioning uses classic v2 Audio Units loaded from `~/Library/Audio/Plug-Ins/Components`.
-- The app is **not sandboxed** (it must read/move files in `~/Library`), so it can't go on
-  the App Store — fine for personal use.
+- Live auditioning covers **Audio Units** only (effects and instruments). VST3/CLAP
+  hosting is a later phase — see `DESIGN.md`.
+- The app is **not sandboxed** (it must read and move files in the plugins folders), so
+  it isn't an App Store candidate — fine for personal use.
+- Universal binaries, code-sign status, and architecture are read with `lipo` and
+  `codesign`.
+
+## Roadmap
+
+Done: catalog + search, chains, AU effect & instrument audition, plugin editor window,
+archive/restore/delete, System-domain support with admin-authorized moves, original
+electric theme and icon.
+
+Candidates next (see "what commercial apps do" discussion): AU validation via `auval`,
+crash-safe scanning, live metering/waveform in Audition, on-screen keyboard for
+instruments, favorites/tags/categories, hosting a whole chain live.
