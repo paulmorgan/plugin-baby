@@ -26,7 +26,13 @@ final class AuditionEngine {
     var canOpenEditor = false
     var statusMessage = "Pick an Audio Unit and, for effects, an audio sample."
 
+    // Live visualization, published to the UI (updated on the main actor).
+    var outputLevel: Float = 0
+    var spectrum: [Float] = Array(repeating: 0, count: 28)
+
     private let testNote: UInt32 = 60   // middle C
+    private let analyzer = SpectrumAnalyzer(fftSize: 1024, bandCount: 28)
+    private var metering = false
 
     init() {
         engine.attach(player)
@@ -105,6 +111,7 @@ final class AuditionEngine {
             statusMessage = "Audio engine failed to start: \(error.localizedDescription)"
             return
         }
+        installMeterTap()
         player.stop()
         isPlaying = true
         scheduleLoop(file)
@@ -130,6 +137,7 @@ final class AuditionEngine {
             statusMessage = "Audio engine failed to start: \(error.localizedDescription)"
             return
         }
+        installMeterTap()
         MusicDeviceMIDIEvent(unit.audioUnit, 0x90, testNote, 100, 0)  // note on
         isPlaying = true
         statusMessage = "Playing test note (C4)…"
@@ -145,9 +153,35 @@ final class AuditionEngine {
         if let unit = audioUnit, loadedKind == .instrument {
             MusicDeviceMIDIEvent(unit.audioUnit, 0x80, testNote, 0, 0)
         }
+        removeMeterTap()
         player.stop()
         engine.stop()
         isPlaying = false
+    }
+
+    // MARK: - Metering
+
+    private func installMeterTap() {
+        guard !metering else { return }
+        let analyzer = self.analyzer
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
+            guard let channels = buffer.floatChannelData else { return }
+            let frames = Int(buffer.frameLength)
+            let (level, bands) = analyzer.process(channels[0], count: frames)
+            Task { @MainActor in
+                self?.outputLevel = level
+                self?.spectrum = bands
+            }
+        }
+        metering = true
+    }
+
+    private func removeMeterTap() {
+        guard metering else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        metering = false
+        outputLevel = 0
+        spectrum = Array(repeating: 0, count: analyzer.bandCount)
     }
 
     func setBypass(_ bypass: Bool) {

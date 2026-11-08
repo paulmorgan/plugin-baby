@@ -8,7 +8,8 @@ struct PluginBabyApp: App {
         WindowGroup {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 940, minHeight: 620)
+                .frame(minWidth: 980, minHeight: 640)
+                .preferredColorScheme(.dark)
                 .task { await model.initialLoad() }
         }
     }

@@ -1,7 +1,8 @@
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case catalog = "Catalog"
+    case dashboard = "Dashboard"
+    case catalog = "Plugins"
     case chains = "Chains"
     case audition = "Audition"
     case archive = "Archive"
@@ -10,9 +11,10 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var icon: String {
         switch self {
-        case .catalog: return "square.grid.2x2"
+        case .dashboard: return "square.grid.2x2.fill"
+        case .catalog: return "list.bullet.rectangle"
         case .chains: return "link"
-        case .audition: return "play.circle"
+        case .audition: return "waveform"
         case .archive: return "archivebox"
         }
     }
@@ -20,47 +22,46 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: AppSection? = .catalog
+    @State private var selection: AppSection? = .dashboard
 
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                BrandHeader()
+                SidebarBrand()
+                Divider().overlay(Theme.hairline)
+
                 List(AppSection.allCases, selection: $selection) { section in
-                    Label(section.rawValue, systemImage: section.icon).tag(section)
+                    Label(section.rawValue, systemImage: section.icon)
+                        .font(.system(size: 13, weight: .medium))
+                        .tag(section)
+                }
+                .scrollContentBackground(.hidden)
+
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PROJECTS · TAGS")
+                        .font(.system(size: 9, weight: .bold)).tracking(1.5)
+                        .foregroundStyle(Theme.accentSecondary)
+                    Text("& collections — coming soon")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.horizontal, 14).padding(.bottom, 12)
+            }
+            .background(Theme.backgroundRaised)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 216)
+        } detail: {
+            Group {
+                switch selection ?? .dashboard {
+                case .dashboard: DashboardView()
+                case .catalog: CatalogView()
+                case .chains: ChainsView()
+                case .audition: AuditionView()
+                case .archive: ArchiveView()
                 }
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-        } detail: {
-            switch selection ?? .catalog {
-            case .catalog: CatalogView()
-            case .chains: ChainsView()
-            case .audition: AuditionView()
-            case .archive: ArchiveView()
-            }
+            .background(Theme.background)
         }
         .tint(Theme.accent)
-    }
-}
-
-/// Electric wordmark shown at the top of the sidebar.
-struct BrandHeader: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.horizontal.fill")
-                    .foregroundStyle(Theme.brandGradient)
-                Text(Theme.wordmark)
-                    .font(.system(.headline, design: .rounded)).bold()
-                    .foregroundStyle(Theme.brandGradient)
-            }
-            Text(Theme.tagline)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
     }
 }

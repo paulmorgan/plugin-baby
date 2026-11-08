@@ -61,6 +61,9 @@ enum PluginScanner {
         let arch = exec.map(architecture(ofMachO:)) ?? .unknown
         let signed: Bool? = exec != nil ? isSigned(bundle) : nil
         let size = directorySize(bundle)
+        let added = (try? bundle.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+            ?? (try? bundle.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            ?? .distantPast
 
         return Plugin(
             name: name,
@@ -72,7 +75,8 @@ enum PluginScanner {
             isSigned: signed,
             path: bundle,
             isArchived: archived,
-            fileSize: size
+            fileSize: size,
+            dateAdded: added
         )
     }
 
