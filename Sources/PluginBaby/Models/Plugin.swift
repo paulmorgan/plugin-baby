@@ -12,6 +12,8 @@ struct Plugin: Identifiable, Hashable, Codable {
     var path: URL
     var isArchived: Bool
     var fileSize: Int64
+    /// When the bundle was created on disk (used for "Recently added").
+    var dateAdded: Date = .distantPast
 
     /// Stable identity used to reference a plugin from chains, independent of
     /// whether it is currently installed or archived.

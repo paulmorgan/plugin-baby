@@ -26,18 +26,55 @@ final class AuditionEngine {
     var canOpenEditor = false
     var statusMessage = "Pick an Audio Unit and, for effects, an audio sample."
 
+    /// Name of the audio sample currently loaded (the bundled default unless the
+    /// user picked their own).
+    var sampleName = ""
+    /// True while the loaded sample is the app's bundled default.
+    var usingDefaultSample = false
+
+    // Live visualization, published to the UI (updated on the main actor).
+    var outputLevel: Float = 0
+    var spectrum: [Float] = Array(repeating: 0, count: 28)
+
     private let testNote: UInt32 = 60   // middle C
+    private let analyzer = SpectrumAnalyzer(fftSize: 1024, bandCount: 28)
+    private var metering = false
 
     init() {
         engine.attach(player)
+        loadDefaultSample()
+    }
+
+    /// The audio sample shipped inside the app bundle, used unless the user
+    /// chooses their own.
+    static var defaultSampleURL: URL? {
+        Bundle.main.url(forResource: "default-sample", withExtension: "mp3")
+    }
+
+    /// Load the bundled default sample (if present). Safe to call any time.
+    func loadDefaultSample() {
+        guard let url = Self.defaultSampleURL else {
+            statusMessage = "No default sample is bundled with the app."
+            return
+        }
+        do {
+            file = try AVAudioFile(forReading: url)
+            sampleName = url.lastPathComponent
+            usingDefaultSample = true
+            statusMessage = "Using default sample."
+        } catch {
+            file = nil
+            statusMessage = "Could not read the default sample: \(error.localizedDescription)"
+        }
     }
 
     func loadSample(_ url: URL) {
         do {
             file = try AVAudioFile(forReading: url)
+            sampleName = url.lastPathComponent
+            usingDefaultSample = false
             statusMessage = "Sample ready: \(url.lastPathComponent)"
         } catch {
-            file = nil
             statusMessage = "Could not read sample: \(error.localizedDescription)"
         }
     }
@@ -86,8 +123,9 @@ final class AuditionEngine {
             playTestNote()
             return
         }
+        if file == nil { loadDefaultSample() }
         guard let file else {
-            statusMessage = "Choose an audio sample first."
+            statusMessage = "No audio sample available. Choose one to preview effects."
             return
         }
         let format = file.processingFormat
@@ -105,6 +143,7 @@ final class AuditionEngine {
             statusMessage = "Audio engine failed to start: \(error.localizedDescription)"
             return
         }
+        installMeterTap()
         player.stop()
         isPlaying = true
         scheduleLoop(file)
@@ -130,6 +169,7 @@ final class AuditionEngine {
             statusMessage = "Audio engine failed to start: \(error.localizedDescription)"
             return
         }
+        installMeterTap()
         MusicDeviceMIDIEvent(unit.audioUnit, 0x90, testNote, 100, 0)  // note on
         isPlaying = true
         statusMessage = "Playing test note (C4)…"
@@ -145,9 +185,35 @@ final class AuditionEngine {
         if let unit = audioUnit, loadedKind == .instrument {
             MusicDeviceMIDIEvent(unit.audioUnit, 0x80, testNote, 0, 0)
         }
+        removeMeterTap()
         player.stop()
         engine.stop()
         isPlaying = false
+    }
+
+    // MARK: - Metering
+
+    private func installMeterTap() {
+        guard !metering else { return }
+        let analyzer = self.analyzer
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
+            guard let channels = buffer.floatChannelData else { return }
+            let frames = Int(buffer.frameLength)
+            let (level, bands) = analyzer.process(channels[0], count: frames)
+            Task { @MainActor in
+                self?.outputLevel = level
+                self?.spectrum = bands
+            }
+        }
+        metering = true
+    }
+
+    private func removeMeterTap() {
+        guard metering else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        metering = false
+        outputLevel = 0
+        spectrum = Array(repeating: 0, count: analyzer.bandCount)
     }
 
     func setBypass(_ bypass: Bool) {
