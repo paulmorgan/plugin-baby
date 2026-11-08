@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.jpg" alt="Plugin Baby — an audio plugin manager for macOS" width="100%">
+</p>
+
 # Plugin Baby
 
 A local, personal macOS app for managing, auditioning, and organizing your audio
