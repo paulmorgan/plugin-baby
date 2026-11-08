@@ -13,10 +13,11 @@ struct AuditionView: View {
 
     var body: some View {
         @Bindable var audition = model.audition
+        let isInstrument = audition.loadedKind == .instrument
 
         VStack(alignment: .leading, spacing: 18) {
             Text("Audition").font(.largeTitle).bold()
-            Text("Play an audio sample through an Audio Unit effect. VST3/CLAP hosting comes in a later phase.")
+            Text("Play a sample through an Audio Unit **effect**, or trigger a test note on an Audio Unit **instrument**. VST3/CLAP hosting comes later.")
                 .foregroundStyle(.secondary)
 
             Picker("Plugin", selection: $selectedPluginID) {
@@ -29,34 +30,48 @@ struct AuditionView: View {
             .onChange(of: selectedPluginID) { _, newValue in
                 if let id = newValue,
                    let plugin = model.plugins.first(where: { $0.id == id }) {
-                    model.audition.loadEffect(for: plugin)
+                    model.audition.loadPlugin(plugin)
                 }
             }
 
-            HStack {
-                Button {
-                    pickSample()
-                } label: {
-                    Label("Choose sample…", systemImage: "waveform")
+            // Sample picker only matters for effects.
+            if !isInstrument {
+                HStack {
+                    Button { pickSample() } label: {
+                        Label("Choose sample…", systemImage: "waveform")
+                    }
+                    Text(sampleName).foregroundStyle(.secondary)
                 }
-                Text(sampleName).foregroundStyle(.secondary)
             }
 
             HStack(spacing: 16) {
                 Button {
                     audition.isPlaying ? model.audition.stop() : model.audition.play()
                 } label: {
-                    Label(audition.isPlaying ? "Stop" : "Play",
-                          systemImage: audition.isPlaying ? "stop.fill" : "play.fill")
-                        .frame(width: 90)
+                    Label(
+                        audition.isPlaying ? "Stop" : (isInstrument ? "Play test note" : "Play"),
+                        systemImage: audition.isPlaying ? "stop.fill" : "play.fill"
+                    )
+                    .frame(width: 130)
                 }
                 .keyboardShortcut(.space, modifiers: [])
+                .disabled(!audition.pluginLoaded)
 
-                Toggle("Bypass (A/B)", isOn: Binding(
-                    get: { audition.isBypassed },
-                    set: { model.audition.setBypass($0) }
-                ))
-                .toggleStyle(.switch)
+                if !isInstrument {
+                    Toggle("Bypass (A/B)", isOn: Binding(
+                        get: { audition.isBypassed },
+                        set: { model.audition.setBypass($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .disabled(!audition.pluginLoaded)
+                }
+
+                Button {
+                    model.audition.openEditor()
+                } label: {
+                    Label("Open editor", systemImage: "slider.horizontal.3")
+                }
+                .disabled(!audition.canOpenEditor)
             }
 
             Text(audition.statusMessage)

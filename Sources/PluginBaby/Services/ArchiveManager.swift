@@ -14,6 +14,7 @@ struct ArchiveManager {
     let persistence = Persistence.shared
 
     /// Move an installed plugin into the archive and return its manifest entry.
+    /// System (`/Library`) plugins are moved with an administrator prompt.
     func archive(_ plugin: Plugin) throws -> ArchiveEntry {
         let fm = FileManager.default
 
@@ -26,12 +27,20 @@ struct ArchiveManager {
         let destName = "\(safeKey)__\(plugin.path.lastPathComponent)"
         let dest = persistence.archiveDir.appendingPathComponent(destName)
         if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-        try fm.moveItem(at: plugin.path, to: dest)
+
+        if plugin.domain.needsPrivilege {
+            // Move as admin, then hand ownership of the archived copy to the user
+            // so restore/delete of that copy need no further admin prompt.
+            try PrivilegedFileOps.move(from: plugin.path, to: dest, chownTo: NSUserName())
+        } else {
+            try fm.moveItem(at: plugin.path, to: dest)
+        }
 
         return ArchiveEntry(
             pluginName: plugin.name,
             manufacturer: plugin.manufacturer,
             format: plugin.format,
+            domain: plugin.domain,
             version: plugin.version,
             originalPath: plugin.path,
             archivedPath: dest,
@@ -41,17 +50,23 @@ struct ArchiveManager {
     }
 
     /// Move an archived plugin back to its original install location.
+    /// System plugins are restored with an administrator prompt.
     func restore(_ entry: ArchiveEntry) throws {
         let fm = FileManager.default
         let dest = entry.originalPath
-        try fm.createDirectory(
-            at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         if fm.fileExists(atPath: dest.path) {
             throw PBError.unsafe("A plugin already exists at the restore location.")
         }
-        try fm.moveItem(at: entry.archivedPath, to: dest)
-        // Clear quarantine so Gatekeeper keeps trusting the restored bundle.
-        Shell.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", dest.path])
+
+        if entry.domain.needsPrivilege {
+            try PrivilegedFileOps.move(from: entry.archivedPath, to: dest)
+        } else {
+            try fm.createDirectory(
+                at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.moveItem(at: entry.archivedPath, to: dest)
+            // Clear quarantine so Gatekeeper keeps trusting the restored bundle.
+            Shell.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", dest.path])
+        }
     }
 
     /// Hard delete: send an archived bundle to the system Trash (recoverable).

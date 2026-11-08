@@ -14,6 +14,7 @@ echo "Building for ${ARCH} against ${SDK}…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+[ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 xcrun swiftc -parse-as-library -O \
     -sdk "$SDK" -target "${ARCH}-apple-macos14" \

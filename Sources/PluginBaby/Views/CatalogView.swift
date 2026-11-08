@@ -39,6 +39,7 @@ struct CatalogView: View {
                 TableColumn("Name", value: \.name)
                 TableColumn("Manufacturer", value: \.manufacturer)
                 TableColumn("Format") { Text($0.format.rawValue) }
+                TableColumn("Where") { Text($0.domain.rawValue).foregroundStyle(.secondary) }
                 TableColumn("Version", value: \.version)
                 TableColumn("Arch") { Text($0.architecture.rawValue) }
                 TableColumn("Size") { Text($0.formattedSize) }
@@ -49,7 +50,9 @@ struct CatalogView: View {
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([plugin.path])
                     }
-                    Button("Archive") { model.archivePlugin(plugin) }
+                    Button(plugin.domain.needsPrivilege ? "Archive (needs admin)…" : "Archive") {
+                        model.archivePlugin(plugin)
+                    }
                 }
             }
         }

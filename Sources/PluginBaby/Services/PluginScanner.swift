@@ -7,19 +7,29 @@ enum PluginScanner {
             .appendingPathComponent("Audio/Plug-Ins", isDirectory: true)
     }
 
+    static func systemPluginRoot() -> URL {
+        URL(fileURLWithPath: "/Library/Audio/Plug-Ins", isDirectory: true)
+    }
+
+    static func root(for domain: PluginDomain) -> URL {
+        domain == .user ? userPluginRoot() : systemPluginRoot()
+    }
+
     static func scanAll() -> [Plugin] {
         var results: [Plugin] = []
-        let root = userPluginRoot()
-        for format in PluginFormat.allCases {
-            let dir = root.appendingPathComponent(format.installSubdirectory, isDirectory: true)
-            results.append(contentsOf: scan(dir: dir, format: format))
+        for domain in PluginDomain.allCases {
+            let root = root(for: domain)
+            for format in PluginFormat.allCases {
+                let dir = root.appendingPathComponent(format.installSubdirectory, isDirectory: true)
+                results.append(contentsOf: scan(dir: dir, format: format, domain: domain))
+            }
         }
         return results.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
 
-    static func scan(dir: URL, format: PluginFormat) -> [Plugin] {
+    static func scan(dir: URL, format: PluginFormat, domain: PluginDomain) -> [Plugin] {
         let fm = FileManager.default
         guard fm.fileExists(atPath: dir.path),
               let enumerator = fm.enumerator(
@@ -31,7 +41,7 @@ enum PluginScanner {
         for case let url as URL in enumerator {
             if url.pathExtension == format.fileExtension {
                 enumerator.skipDescendants() // treat the bundle as a leaf
-                if let plugin = makePlugin(bundle: url, format: format, archived: false) {
+                if let plugin = makePlugin(bundle: url, format: format, domain: domain, archived: false) {
                     found.append(plugin)
                 }
             }
@@ -39,7 +49,7 @@ enum PluginScanner {
         return found
     }
 
-    static func makePlugin(bundle: URL, format: PluginFormat, archived: Bool) -> Plugin? {
+    static func makePlugin(bundle: URL, format: PluginFormat, domain: PluginDomain, archived: Bool) -> Plugin? {
         let info = loadInfoPlist(bundle: bundle)
         let name = (info?["CFBundleName"] as? String)
             ?? bundle.deletingPathExtension().lastPathComponent
@@ -56,6 +66,7 @@ enum PluginScanner {
             name: name,
             manufacturer: manufacturer,
             format: format,
+            domain: domain,
             version: version,
             architecture: arch,
             isSigned: signed,

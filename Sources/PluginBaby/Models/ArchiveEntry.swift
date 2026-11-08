@@ -6,6 +6,7 @@ struct ArchiveEntry: Identifiable, Hashable, Codable {
     var pluginName: String
     var manufacturer: String
     var format: PluginFormat
+    var domain: PluginDomain
     var version: String
     var originalPath: URL   // where to restore it to
     var archivedPath: URL   // where it currently sits in the archive
