@@ -32,6 +32,9 @@ audio through it, and playing the result. How hard that is depends entirely on f
 frameworks, including showing the plugin's own UI. Catalog/archive/restore cover all
 formats from day one. VST3/CLAP hosting is a Phase 3 item only if you decide you need it.
 
+> **CLAP auditioning is now scoped** — see [`docs/CLAP-AUDITION.md`](docs/CLAP-AUDITION.md).
+> It's the cheapest non-AU format to host (MIT, header-only C), MVP ≈ 1 week.
+
 This matters because most commercial plugins ship **both** an AU and a VST3 build, so
 AU-only auditioning still covers the large majority of what you own.
 
