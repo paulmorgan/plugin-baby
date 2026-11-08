@@ -104,8 +104,11 @@ DESIGN.md                    design doc and locked decisions
 
 ## Notes & limits
 
-- Live auditioning covers **Audio Units** only (effects and instruments). VST3/CLAP
-  hosting is a later phase — see `DESIGN.md`.
+- Live auditioning covers **Audio Units** (effects and instruments) and, newly,
+  **CLAP** (effects and instruments) via a bundled C host shim — see
+  `docs/CLAP-AUDITION.md`. CLAP is ABI-verified against a reference plugin but
+  not yet tested against a commercial CLAP. VST3 hosting is still a later phase
+  (`docs/VST3-AUDITION.md`).
 - The app is **not sandboxed** (it must read and move files in the plugins folders), so
   it isn't an App Store candidate — fine for personal use.
 - Universal binaries, code-sign status, and architecture are read with `lipo` and

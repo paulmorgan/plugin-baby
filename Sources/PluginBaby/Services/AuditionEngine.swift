@@ -39,6 +39,10 @@ final class AuditionEngine {
     private let testNote: UInt32 = 60   // middle C
     private let analyzer = SpectrumAnalyzer(fftSize: 1024, bandCount: 28)
     private var metering = false
+    private var clapBackend: CLAPAuditionBackend?
+
+    /// URL of the sample currently loaded (bundled default or user-chosen).
+    private(set) var sampleURL: URL?
 
     init() {
         engine.attach(player)
@@ -60,6 +64,7 @@ final class AuditionEngine {
         do {
             file = try AVAudioFile(forReading: url)
             sampleName = url.lastPathComponent
+            sampleURL = url
             usingDefaultSample = true
             statusMessage = "Using default sample."
         } catch {
@@ -72,6 +77,7 @@ final class AuditionEngine {
         do {
             file = try AVAudioFile(forReading: url)
             sampleName = url.lastPathComponent
+            sampleURL = url
             usingDefaultSample = false
             statusMessage = "Sample ready: \(url.lastPathComponent)"
         } catch {
@@ -82,6 +88,13 @@ final class AuditionEngine {
     func loadPlugin(_ plugin: Plugin) {
         stop()
         closeEditor()
+        clapBackend = nil
+
+        if plugin.format == .clap {
+            loadCLAP(plugin)
+            return
+        }
+
         guard let (description, kind) = AudioComponentDescriptionReader.description(for: plugin),
               kind != .other else {
             pluginLoaded = false
@@ -111,6 +124,28 @@ final class AuditionEngine {
         }
     }
 
+    /// Host a CLAP plugin through the dedicated CLAP backend (separate engine).
+    private func loadCLAP(_ plugin: Plugin) {
+        pluginLoaded = false
+        canOpenEditor = false
+        loadedKind = .other
+        let sample = sampleURL ?? Self.defaultSampleURL
+        guard let backend = CLAPAuditionBackend(plugin: plugin, sampleURL: sample) else {
+            statusMessage = "Couldn\u{2019}t host \(plugin.name) as a CLAP plugin."
+            return
+        }
+        backend.onMeter = { [weak self] level, bands in
+            self?.outputLevel = level
+            self?.spectrum = bands
+        }
+        clapBackend = backend
+        loadedKind = backend.isInstrument ? .instrument : .effect
+        pluginLoaded = true
+        canOpenEditor = false   // CLAP editor UI is a later phase
+        let label = backend.isInstrument ? "instrument" : "effect"
+        statusMessage = "Loaded \(plugin.name) (CLAP \(label))."
+    }
+
     private func attach(_ unit: AVAudioUnit) {
         if let existing = audioUnit { engine.detach(existing) }
         audioUnit = unit
@@ -119,6 +154,20 @@ final class AuditionEngine {
 
     /// Play: effects process the sample; instruments trigger a test note.
     func play() {
+        if let clap = clapBackend {
+            if isPlaying { stop(); return }
+            clap.play()
+            isPlaying = true
+            statusMessage = clap.isInstrument ? "Playing test note (C4)\u{2026}" : "Auditioning (CLAP)\u{2026}"
+            if clap.isInstrument {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                    guard let self, self.isPlaying else { return }
+                    self.stop()
+                    self.statusMessage = "Test note finished."
+                }
+            }
+            return
+        }
         if loadedKind == .instrument {
             playTestNote()
             return
@@ -182,6 +231,7 @@ final class AuditionEngine {
     }
 
     func stop() {
+        clapBackend?.stop()
         if let unit = audioUnit, loadedKind == .instrument {
             MusicDeviceMIDIEvent(unit.audioUnit, 0x80, testNote, 0, 0)
         }

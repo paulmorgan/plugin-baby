@@ -55,7 +55,7 @@ struct DetailPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
-                .disabled(plugin.format != .audioUnit)
+                .disabled(plugin.format != .audioUnit && plugin.format != .clap)
 
                 Menu {
                     Button("Reveal in Finder") {

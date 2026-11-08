@@ -1,8 +1,16 @@
 # Scope: CLAP auditioning
 
-> How Plugin Baby could host **CLAP** plugins for live auditioning, the way it
+> How Plugin Baby hosts **CLAP** plugins for live auditioning, the way it
 > already hosts Audio Units. Companion to `DESIGN.md` §2 (hosting formats).
-> Status: **proposal / not yet built.**
+>
+> **Status: Phases A + B implemented.** A C host shim (`Sources/CLAPBridge/`,
+> CLAP 1.2.x headers vendored, MIT) plus a Swift render path
+> (`CLAPHost.swift`, `CLAPAuditionBackend.swift`) load a `.clap`, read its
+> channel layout, and run audio through it via an `AVAudioSourceNode`. The ABI
+> is verified end-to-end against a reference gain plugin (`verify.sh`); it has
+> **not** yet been exercised against a commercial CLAP, because none is
+> installed on the dev machine. Phases C (editor GUI) and D (full instrument
+> MIDI) remain to do.
 
 ## TL;DR
 
