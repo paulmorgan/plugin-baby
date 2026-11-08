@@ -16,6 +16,8 @@ final class AuditionEngine {
     private var audioUnit: AVAudioUnit?
     private var file: AVAudioFile?
     private var editorWindow: NSWindow?
+    private var editorController: NSViewController?
+    private var editorSizeObservation: NSKeyValueObservation?
 
     var isPlaying = false
     var isBypassed = false
@@ -173,20 +175,50 @@ final class AuditionEngine {
     }
 
     private func presentEditor(_ controller: NSViewController) {
+        closeEditor()
+        editorController = controller
+
         let window = NSWindow(contentViewController: controller)
         window.title = "Plugin Editor"
         window.styleMask = [.titled, .closable, .resizable]
-        let size = controller.preferredContentSize
-        window.setContentSize(size == .zero ? NSSize(width: 640, height: 420) : size)
         window.isReleasedWhenClosed = false
+        applyEditorSize(to: window, from: controller)
         window.center()
         editorWindow = window
+
+        // AU editors frequently report their true size asynchronously, after the
+        // view has loaded its own layout. Keep the window fit to it as it settles.
+        editorSizeObservation = controller.observe(\.preferredContentSize, options: [.new]) { [weak self, weak window] ctrl, _ in
+            Task { @MainActor in
+                guard let self, let window else { return }
+                self.applyEditorSize(to: window, from: ctrl)
+            }
+        }
+
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Size the editor window to the plugin view's real content, falling back to
+    /// the view's own fitting size when the plugin hasn't reported one yet.
+    private func applyEditorSize(to window: NSWindow, from controller: NSViewController) {
+        var size = controller.preferredContentSize
+        if size.width < 1 || size.height < 1 {
+            controller.view.layoutSubtreeIfNeeded()
+            size = controller.view.fittingSize
+        }
+        guard size.width >= 1, size.height >= 1 else { return }
+        window.setContentSize(size)
+        // Most AU plugin UIs are drawn at a fixed design size; stop the window
+        // from collapsing smaller than the view and clipping controls.
+        window.contentMinSize = size
+    }
+
     private func closeEditor() {
+        editorSizeObservation?.invalidate()
+        editorSizeObservation = nil
         editorWindow?.close()
         editorWindow = nil
+        editorController = nil
     }
 }
