@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// Right-hand dashboard panel: the selected plugin, a Manage menu, a live
 /// preview, and the spectrum + level meters.
@@ -64,6 +65,10 @@ struct DetailPanel: View {
                         Button("Validate (auval)") { model.validate(plugin) }
                     }
                     Divider()
+                    Button("Choose Audio Sample…") { chooseSample() }
+                    Button("Use Default Sample") { model.audition.loadDefaultSample() }
+                        .disabled(model.audition.usingDefaultSample)
+                    Divider()
                     Button(plugin.domain.needsPrivilege ? "Archive (needs admin)…" : "Archive",
                            role: .destructive) {
                         model.archivePlugin(plugin)
@@ -121,6 +126,7 @@ struct DetailPanel: View {
 
     private var visualizer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            sampleRow
             Text("OUTPUT")
                 .font(.system(size: 9, weight: .bold)).tracking(1.5)
                 .foregroundStyle(Theme.textSecondary)
@@ -140,7 +146,47 @@ struct DetailPanel: View {
         }
     }
 
+    private var sampleRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "music.note")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.accent)
+            Text(model.audition.sampleName.isEmpty ? "No sample" : model.audition.sampleName)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+            if model.audition.usingDefaultSample {
+                Text("default")
+                    .font(.system(size: 8, weight: .bold))
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(Capsule().fill(Theme.accent.opacity(0.18)))
+                    .foregroundStyle(Theme.accent)
+            }
+            Spacer()
+            Menu {
+                Button("Choose Audio Sample…") { chooseSample() }
+                Button("Use Default Sample") { model.audition.loadDefaultSample() }
+                    .disabled(model.audition.usingDefaultSample)
+            } label: {
+                Text("Change").font(.system(size: 10, weight: .medium))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
     // MARK: Actions
+
+    private func chooseSample() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = "Use Sample"
+        if panel.runModal() == .OK, let url = panel.url {
+            model.audition.loadSample(url)
+        }
+    }
 
     private func preview(_ plugin: Plugin) {
         if model.audition.isPlaying { model.audition.stop(); return }

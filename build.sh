@@ -15,6 +15,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+[ -f Resources/default-sample.mp3 ] && cp Resources/default-sample.mp3 "$APP/Contents/Resources/default-sample.mp3"
 
 xcrun swiftc -parse-as-library -O \
     -sdk "$SDK" -target "${ARCH}-apple-macos14" \

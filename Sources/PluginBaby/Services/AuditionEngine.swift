@@ -26,6 +26,12 @@ final class AuditionEngine {
     var canOpenEditor = false
     var statusMessage = "Pick an Audio Unit and, for effects, an audio sample."
 
+    /// Name of the audio sample currently loaded (the bundled default unless the
+    /// user picked their own).
+    var sampleName = ""
+    /// True while the loaded sample is the app's bundled default.
+    var usingDefaultSample = false
+
     // Live visualization, published to the UI (updated on the main actor).
     var outputLevel: Float = 0
     var spectrum: [Float] = Array(repeating: 0, count: 28)
@@ -36,14 +42,39 @@ final class AuditionEngine {
 
     init() {
         engine.attach(player)
+        loadDefaultSample()
+    }
+
+    /// The audio sample shipped inside the app bundle, used unless the user
+    /// chooses their own.
+    static var defaultSampleURL: URL? {
+        Bundle.main.url(forResource: "default-sample", withExtension: "mp3")
+    }
+
+    /// Load the bundled default sample (if present). Safe to call any time.
+    func loadDefaultSample() {
+        guard let url = Self.defaultSampleURL else {
+            statusMessage = "No default sample is bundled with the app."
+            return
+        }
+        do {
+            file = try AVAudioFile(forReading: url)
+            sampleName = url.lastPathComponent
+            usingDefaultSample = true
+            statusMessage = "Using default sample."
+        } catch {
+            file = nil
+            statusMessage = "Could not read the default sample: \(error.localizedDescription)"
+        }
     }
 
     func loadSample(_ url: URL) {
         do {
             file = try AVAudioFile(forReading: url)
+            sampleName = url.lastPathComponent
+            usingDefaultSample = false
             statusMessage = "Sample ready: \(url.lastPathComponent)"
         } catch {
-            file = nil
             statusMessage = "Could not read sample: \(error.localizedDescription)"
         }
     }
@@ -92,8 +123,9 @@ final class AuditionEngine {
             playTestNote()
             return
         }
+        if file == nil { loadDefaultSample() }
         guard let file else {
-            statusMessage = "Choose an audio sample first."
+            statusMessage = "No audio sample available. Choose one to preview effects."
             return
         }
         let format = file.processingFormat
