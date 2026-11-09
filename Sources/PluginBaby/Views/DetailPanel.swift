@@ -164,35 +164,22 @@ struct DetailPanel: View {
         }
     }
 
-    @ViewBuilder private func paramRow(_ p: CLAPHost.Param) -> some View {
+    private func paramRow(_ p: CLAPHost.Param) -> some View {
         let binding = Binding<Double>(
             get: { model.audition.clapParamValues[p.id] ?? p.defaultValue },
             set: { model.audition.setClapParameter(id: p.id, value: $0) }
         )
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text(p.name.isEmpty ? "Param \(p.id)" : p.name)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                Spacer()
-                Text(formatValue(binding.wrappedValue, p))
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            if p.maxValue <= p.minValue {
-                EmptyView()   // fixed / unadjustable: show the value only
-            } else if p.isStepped && (p.maxValue - p.minValue) == 1 {
-                Toggle("", isOn: Binding(
-                    get: { binding.wrappedValue >= 0.5 },
-                    set: { binding.wrappedValue = $0 ? p.maxValue : p.minValue }))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-            } else if p.isStepped {
-                Slider(value: binding, in: p.minValue...p.maxValue, step: 1).controlSize(.mini)
-            } else {
-                Slider(value: binding, in: p.minValue...p.maxValue).controlSize(.mini)
-            }
-        }
+        let style: ParamSliderRow.Style
+        if p.maxValue <= p.minValue { style = .fixed }
+        else if p.isStepped && (p.maxValue - p.minValue) == 1 { style = .toggle }
+        else { style = p.isStepped ? .stepped : .continuous }
+
+        return ParamSliderRow(
+            name: p.name.isEmpty ? "Param \(p.id)" : p.name,
+            valueText: formatValue(binding.wrappedValue, p),
+            range: p.minValue...max(p.minValue, p.maxValue),
+            style: style,
+            value: binding)
     }
 
     private func formatValue(_ v: Double, _ p: CLAPHost.Param) -> String {

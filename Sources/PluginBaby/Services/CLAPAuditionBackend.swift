@@ -16,8 +16,7 @@ final class CLAPAuditionBackend {
     private var sourceNode: AVAudioSourceNode?
     private let host: CLAPHost
     private let core: CLAPRenderCore
-    private let analyzer = SpectrumAnalyzer(fftSize: 1024, bandCount: 28)
-    private var metering = false
+    private let meter = MeterTap(fftSize: 1024, bandCount: 28)
 
     let isInstrument: Bool
     let descriptorName: String
@@ -76,6 +75,9 @@ final class CLAPAuditionBackend {
         sourceNode = node
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
+
+        // Forward the shared meter tap to this backend's published callback.
+        meter.onMeter = { [weak self] level, bands in self?.onMeter?(level, bands) }
     }
 
     // MARK: - Parameters
@@ -90,7 +92,7 @@ final class CLAPAuditionBackend {
     func setParameter(id: UInt32, value: Double) { host.setParameter(id: id, value: value) }
 
     func play() {
-        installMeterTap()
+        meter.install(on: engine.mainMixerNode)
         core.reset()
         do {
             try engine.start()
@@ -104,31 +106,8 @@ final class CLAPAuditionBackend {
 
     func stop() {
         if isInstrument { host.allNotesOff() }
-        removeMeterTap()
+        meter.remove()
         engine.stop()
-    }
-
-    // MARK: - Metering (mirrors AuditionEngine)
-
-    private func installMeterTap() {
-        guard !metering else { return }
-        let analyzer = self.analyzer
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
-            guard let channels = buffer.floatChannelData else { return }
-            let frames = Int(buffer.frameLength)
-            let (level, bands) = analyzer.process(channels[0], count: frames)
-            Task { @MainActor in
-                self?.onMeter?(level, bands)
-            }
-        }
-        metering = true
-    }
-
-    private func removeMeterTap() {
-        guard metering else { return }
-        engine.mainMixerNode.removeTap(onBus: 0)
-        metering = false
-        onMeter?(0, Array(repeating: 0, count: analyzer.bandCount))
     }
 
     // MARK: - Sample decode

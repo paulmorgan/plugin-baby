@@ -41,51 +41,36 @@ struct AUParameterEditorView: View {
     }
 }
 
-/// One live-updating control for a single AU parameter.
+/// One live-updating control for a single AU parameter, built on the shared
+/// `ParamSliderRow` (writes straight to the live Audio Unit).
 private struct ParameterRow: View {
     let param: AUParameter
-    @State private var value: Float
+    @State private var value: Double
 
     init(param: AUParameter) {
         self.param = param
-        _value = State(initialValue: param.value)
+        _value = State(initialValue: Double(param.value))
     }
 
-    private var isBoolean: Bool { param.unit == .boolean }
-    private var hasRange: Bool { param.maxValue > param.minValue }
+    private var style: ParamSliderRow.Style {
+        if param.unit == .boolean { return .toggle }
+        return param.maxValue > param.minValue ? .continuous : .fixed
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(param.displayName.isEmpty ? "Parameter" : param.displayName)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                Spacer()
-                Text(valueLabel)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            if isBoolean {
-                Toggle("", isOn: Binding(
-                    get: { value >= 0.5 },
-                    set: { set($0 ? param.maxValue : param.minValue) }))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
-            } else if hasRange {
-                Slider(value: Binding(get: { value }, set: { set($0) }),
-                       in: param.minValue...param.maxValue)
-                    .controlSize(.small)
-            }
-        }
+        ParamSliderRow(
+            name: param.displayName,
+            valueText: valueLabel,
+            range: Double(param.minValue)...Double(max(param.minValue, param.maxValue)),
+            style: style,
+            value: Binding(
+                get: { value },
+                set: { value = $0; param.value = AUValue($0) }))   // live write to the AU
     }
 
     private var valueLabel: String {
-        var v = value   // string(fromValue:) needs a pointer to a real variable
+        var v = AUValue(value)   // string(fromValue:) needs a pointer to a real variable
         let s = param.string(fromValue: &v)
         return s.isEmpty ? String(format: "%.2f", value) : s
-    }
-
-    private func set(_ v: Float) {
-        value = v
-        param.value = v   // write straight to the live Audio Unit
     }
 }
