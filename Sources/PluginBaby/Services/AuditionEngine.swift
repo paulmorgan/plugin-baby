@@ -36,6 +36,12 @@ final class AuditionEngine {
     var outputLevel: Float = 0
     var spectrum: [Float] = Array(repeating: 0, count: 28)
 
+    /// Adjustable parameters of the loaded CLAP plugin (empty for AUs or a CLAP
+    /// with no parameters). The UI draws a slider per entry.
+    var clapParameters: [CLAPHost.Param] = []
+    /// Live value of each CLAP parameter, keyed by id — the slider bindings.
+    var clapParamValues: [UInt32: Double] = [:]
+
     private let testNote: UInt32 = 60   // middle C
     private let analyzer = SpectrumAnalyzer(fftSize: 1024, bandCount: 28)
     private var metering = false
@@ -89,6 +95,8 @@ final class AuditionEngine {
         stop()
         closeEditor()
         clapBackend = nil
+        clapParameters = []
+        clapParamValues = [:]
 
         if plugin.format == .clap {
             loadCLAP(plugin)
@@ -142,8 +150,26 @@ final class AuditionEngine {
         loadedKind = backend.isInstrument ? .instrument : .effect
         pluginLoaded = true
         canOpenEditor = false   // CLAP editor UI is a later phase
+
+        // Read the plugin's parameters so the UI can offer live sliders.
+        clapParameters = backend.parameters()
+        clapParamValues = Dictionary(uniqueKeysWithValues:
+            clapParameters.map { ($0.id, backend.parameterValue(id: $0.id)) })
+
         let label = backend.isInstrument ? "instrument" : "effect"
-        statusMessage = "Loaded \(plugin.name) (CLAP \(label))."
+        let paramNote = clapParameters.isEmpty ? "" : " · \(clapParameters.count) parameter\(clapParameters.count == 1 ? "" : "s")"
+        statusMessage = "Loaded \(plugin.name) (CLAP \(label))\(paramNote)."
+    }
+
+    /// Adjust a CLAP parameter live (effective on the next audio block).
+    func setClapParameter(id: UInt32, value: Double) {
+        clapParamValues[id] = value
+        clapBackend?.setParameter(id: id, value: value)
+    }
+
+    /// Reset every CLAP parameter to its default value.
+    func resetClapParameters() {
+        for p in clapParameters { setClapParameter(id: p.id, value: p.defaultValue) }
     }
 
     private func attach(_ unit: AVAudioUnit) {

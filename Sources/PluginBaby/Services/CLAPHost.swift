@@ -28,6 +28,16 @@ final class CLAPHost {
         }
     }
 
+    /// One adjustable plugin parameter's static description.
+    struct Param: Identifiable, Hashable {
+        let id: UInt32
+        let name: String
+        let minValue: Double
+        let maxValue: Double
+        let defaultValue: Double
+        let isStepped: Bool
+    }
+
     private var handle: OpaquePointer?
     let inputChannels: Int
     let outputChannels: Int
@@ -51,6 +61,41 @@ final class CLAPHost {
         guard let h = handle else { return false }
         return pb_clap_process(h, input, UInt32(inCh), output, UInt32(outCh),
                                UInt32(frames), steadyTime)
+    }
+
+    // MARK: - Parameters
+
+    /// The plugin's adjustable parameters (empty if it exposes none).
+    func parameters() -> [Param] {
+        guard let h = handle else { return [] }
+        let count = Int(pb_clap_param_count(h))
+        guard count > 0 else { return [] }
+        var result: [Param] = []
+        result.reserveCapacity(count)
+        for i in 0..<count {
+            var info = pb_clap_param()
+            guard pb_clap_param_info(h, UInt32(i), &info) else { continue }
+            result.append(Param(
+                id: info.id,
+                name: Self.string(&info.name),
+                minValue: info.min_value,
+                maxValue: info.max_value,
+                defaultValue: info.default_value,
+                isStepped: info.is_stepped))
+        }
+        return result
+    }
+
+    /// Current value of a parameter (by id).
+    func parameterValue(id: UInt32) -> Double {
+        guard let h = handle else { return 0 }
+        return pb_clap_param_value(h, id)
+    }
+
+    /// Queue a new value for a parameter; applied on the next audio block.
+    func setParameter(id: UInt32, value: Double) {
+        guard let h = handle else { return }
+        pb_clap_set_param(h, id, value)
     }
 
     func noteOn(key: Int, velocity: Double) {

@@ -64,6 +64,27 @@ void pb_clap_note_on(pb_clap_handle *h, int16_t key, double velocity);
 void pb_clap_note_off(pb_clap_handle *h, int16_t key);
 void pb_clap_all_notes_off(pb_clap_handle *h);
 
+// --- Parameters (main thread) -------------------------------------------
+// One plugin parameter's static description.
+typedef struct {
+    uint32_t id;
+    char     name[256];
+    double   min_value;
+    double   max_value;
+    double   default_value;
+    bool     is_stepped;   // true = integer steps (checkbox/stepper), not continuous
+} pb_clap_param;
+
+// Number of adjustable parameters (0 if the plugin exposes none).
+uint32_t pb_clap_param_count(const pb_clap_handle *h);
+// Fill `out` for the parameter at `index` (0..count-1). Returns false on error.
+bool     pb_clap_param_info(const pb_clap_handle *h, uint32_t index, pb_clap_param *out);
+// Current value of a parameter (by its id).
+double   pb_clap_param_value(const pb_clap_handle *h, uint32_t param_id);
+// Queue a new value for a parameter; applied on the next process() block.
+// Real-time safe on the audio side; call this from the main thread.
+void     pb_clap_set_param(pb_clap_handle *h, uint32_t param_id, double value);
+
 #ifdef __cplusplus
 }
 #endif

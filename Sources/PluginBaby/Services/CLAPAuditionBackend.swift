@@ -78,6 +78,17 @@ final class CLAPAuditionBackend {
         engine.connect(node, to: engine.mainMixerNode, format: format)
     }
 
+    // MARK: - Parameters
+
+    /// The plugin's adjustable parameters (empty if it exposes none).
+    func parameters() -> [CLAPHost.Param] { host.parameters() }
+
+    /// Current value of a parameter.
+    func parameterValue(id: UInt32) -> Double { host.parameterValue(id: id) }
+
+    /// Adjust a parameter live; takes effect on the next audio block.
+    func setParameter(id: UInt32, value: Double) { host.setParameter(id: id, value: value) }
+
     func play() {
         installMeterTap()
         core.reset()

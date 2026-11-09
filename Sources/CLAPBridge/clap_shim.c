@@ -17,11 +17,21 @@
 
 #define PB_MAX_EVENTS 64
 
+// One input event, large enough for either kind we deliver. Both structs begin
+// with a clap_event_header_t at offset 0, so a pointer to the union doubles as a
+// pointer to the header (what clap_input_events.get must return).
+typedef union {
+    clap_event_header_t      header;
+    clap_event_note_t        note;
+    clap_event_param_value_t param;
+} pb_event;
+
 struct pb_clap_handle {
     void                       *dso;
     CFBundleRef                 bundle;      // non-NULL when loaded from a .clap bundle
     const clap_plugin_entry_t  *entry;
     const clap_plugin_t        *plugin;
+    const clap_plugin_params_t *params;      // NULL if the plugin exposes no params
     clap_host_t                 host;
 
     bool      active;
@@ -30,13 +40,16 @@ struct pb_clap_handle {
     uint32_t  out_ch;
     bool      is_instrument;
 
-    // Note hand-off: main thread fills `pending`, audio thread drains it into
-    // `events` at the top of each process() under a try-lock.
+    // Control hand-off: main thread fills the `pending_*` queues, the audio
+    // thread drains them into `events` at the top of each process() under a
+    // try-lock. Param changes coalesce by id so a fast slider drag can't flood.
     os_unfair_lock lock;
     struct { int16_t key; double vel; bool on; } pending[PB_MAX_EVENTS];
     uint32_t pending_count;
+    struct { uint32_t id; double value; } pending_params[PB_MAX_EVENTS];
+    uint32_t pending_param_count;
 
-    clap_event_note_t   events[PB_MAX_EVENTS];
+    pb_event            events[PB_MAX_EVENTS];
     uint32_t            event_count;   // valid only during a process() call
     clap_input_events_t  in_events;
     clap_output_events_t out_events;
@@ -60,7 +73,7 @@ static uint32_t pb_in_events_size(const clap_input_events_t *list) {
 static const clap_event_header_t *pb_in_events_get(const clap_input_events_t *list, uint32_t index) {
     const pb_clap_handle *h = (const pb_clap_handle *)list->ctx;
     if (index >= h->event_count) return NULL;
-    return &h->events[index].header;
+    return &h->events[index].header;   // union member at offset 0
 }
 static bool pb_out_events_try_push(const clap_output_events_t *list, const clap_event_header_t *event) {
     (void)list; (void)event; return true;   // we consume (ignore) plugin output events
@@ -238,6 +251,9 @@ pb_clap_handle *pb_clap_open(const char *clap_path, const char *plugin_id,
     if (h->out_ch == 0) h->out_ch = 2;                 // sane default
     if (h->is_instrument) h->in_ch = 0;                 // instruments take no audio input
 
+    // Parameters (optional): lets the app read and adjust the plugin's controls.
+    h->params = (const clap_plugin_params_t *)plugin->get_extension(plugin, CLAP_EXT_PARAMS);
+
     if (!plugin->activate(plugin, sample_rate, 1, max_frames)) {
         plugin->destroy(plugin);
         if (entry->deinit) entry->deinit();
@@ -285,13 +301,15 @@ bool pb_clap_process(pb_clap_handle *h,
                      uint32_t frames, int64_t steady_time) {
     if (!h || !h->plugin || !h->active) return false;
 
-    // Drain queued notes into CLAP events (non-blocking).
+    // Drain queued notes and parameter changes into CLAP events (non-blocking).
     h->event_count = 0;
     if (os_unfair_lock_trylock(&h->lock)) {
-        uint32_t n = h->pending_count;
-        if (n > PB_MAX_EVENTS) n = PB_MAX_EVENTS;
-        for (uint32_t i = 0; i < n; ++i) {
-            clap_event_note_t *ev = &h->events[i];
+        uint32_t idx = 0;
+
+        uint32_t nn = h->pending_count;
+        if (nn > PB_MAX_EVENTS) nn = PB_MAX_EVENTS;
+        for (uint32_t i = 0; i < nn && idx < PB_MAX_EVENTS; ++i, ++idx) {
+            clap_event_note_t *ev = &h->events[idx].note;
             memset(ev, 0, sizeof(*ev));
             ev->header.size     = sizeof(clap_event_note_t);
             ev->header.time     = 0;
@@ -304,8 +322,28 @@ bool pb_clap_process(pb_clap_handle *h,
             ev->key        = h->pending[i].key;
             ev->velocity   = h->pending[i].vel;
         }
-        h->event_count   = n;
-        h->pending_count = 0;
+
+        uint32_t np = h->pending_param_count;
+        for (uint32_t i = 0; i < np && idx < PB_MAX_EVENTS; ++i, ++idx) {
+            clap_event_param_value_t *ev = &h->events[idx].param;
+            memset(ev, 0, sizeof(*ev));
+            ev->header.size     = sizeof(clap_event_param_value_t);
+            ev->header.time     = 0;
+            ev->header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+            ev->header.type     = CLAP_EVENT_PARAM_VALUE;
+            ev->header.flags    = CLAP_EVENT_IS_LIVE;
+            ev->param_id   = h->pending_params[i].id;
+            ev->cookie     = NULL;
+            ev->note_id    = -1;
+            ev->port_index = -1;
+            ev->channel    = -1;
+            ev->key        = -1;
+            ev->value      = h->pending_params[i].value;
+        }
+
+        h->event_count        = idx;
+        h->pending_count      = 0;
+        h->pending_param_count = 0;
         os_unfair_lock_unlock(&h->lock);
     }
 
@@ -355,4 +393,53 @@ void pb_clap_note_off(pb_clap_handle *h, int16_t key) {
 }
 void pb_clap_all_notes_off(pb_clap_handle *h) {
     for (int16_t k = 0; k < 128; ++k) pb_enqueue(h, k, 0.0, false);
+}
+
+// --- Parameters --------------------------------------------------------
+
+uint32_t pb_clap_param_count(const pb_clap_handle *h) {
+    if (!h || !h->params || !h->params->count) return 0;
+    return h->params->count(h->plugin);
+}
+
+bool pb_clap_param_info(const pb_clap_handle *h, uint32_t index, pb_clap_param *out) {
+    if (!h || !out || !h->params || !h->params->get_info) return false;
+    clap_param_info_t info;
+    memset(&info, 0, sizeof(info));
+    if (!h->params->get_info(h->plugin, index, &info)) return false;
+    out->id            = info.id;
+    out->min_value     = info.min_value;
+    out->max_value     = info.max_value;
+    out->default_value = info.default_value;
+    out->is_stepped    = (info.flags & CLAP_PARAM_IS_STEPPED) != 0;
+    memset(out->name, 0, sizeof(out->name));
+    strncpy(out->name, info.name, sizeof(out->name) - 1);
+    return true;
+}
+
+double pb_clap_param_value(const pb_clap_handle *h, uint32_t param_id) {
+    if (!h || !h->params || !h->params->get_value) return 0.0;
+    double v = 0.0;
+    if (h->params->get_value(h->plugin, param_id, &v)) return v;
+    return 0.0;
+}
+
+// Queue a parameter change; applied on the next process() as a PARAM_VALUE
+// event. Coalesces by id so a fast slider drag keeps only the latest value.
+void pb_clap_set_param(pb_clap_handle *h, uint32_t param_id, double value) {
+    if (!h) return;
+    os_unfair_lock_lock(&h->lock);
+    for (uint32_t i = 0; i < h->pending_param_count; ++i) {
+        if (h->pending_params[i].id == param_id) {
+            h->pending_params[i].value = value;
+            os_unfair_lock_unlock(&h->lock);
+            return;
+        }
+    }
+    if (h->pending_param_count < PB_MAX_EVENTS) {
+        h->pending_params[h->pending_param_count].id    = param_id;
+        h->pending_params[h->pending_param_count].value = value;
+        h->pending_param_count++;
+    }
+    os_unfair_lock_unlock(&h->lock);
 }
