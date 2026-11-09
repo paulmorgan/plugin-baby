@@ -50,17 +50,23 @@ enum PluginScanner {
     }
 
     static func makePlugin(bundle: URL, format: PluginFormat, domain: PluginDomain, archived: Bool) -> Plugin? {
-        let info = loadInfoPlist(bundle: bundle)
+        // A plugin is usually a bundle (a directory with Contents/Info.plist and
+        // Contents/MacOS/<exec>), but some formats — notably CLAP — may ship as a
+        // single plain dylib file. In that case the file *is* the executable and
+        // there is no Info.plist, so read metadata from the file directly.
+        let isBundle = (try? bundle.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? true
+
+        let info = isBundle ? loadInfoPlist(bundle: bundle) : nil
         let name = (info?["CFBundleName"] as? String)
             ?? bundle.deletingPathExtension().lastPathComponent
         let version = (info?["CFBundleShortVersionString"] as? String)
             ?? (info?["CFBundleVersion"] as? String)
             ?? "—"
         let manufacturer = manufacturerName(bundleID: info?["CFBundleIdentifier"] as? String)
-        let exec = executableURL(bundle: bundle, info: info)
+        let exec = isBundle ? executableURL(bundle: bundle, info: info) : bundle
         let arch = exec.map(architecture(ofMachO:)) ?? .unknown
         let signed: Bool? = exec != nil ? isSigned(bundle) : nil
-        let size = directorySize(bundle)
+        let size = isBundle ? directorySize(bundle) : fileSize(bundle)
         let added = (try? bundle.resourceValues(forKeys: [.creationDateKey]))?.creationDate
             ?? (try? bundle.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             ?? .distantPast
@@ -130,6 +136,13 @@ enum PluginScanner {
 
     static func isSigned(_ bundle: URL) -> Bool {
         Shell.run("/usr/bin/codesign", ["-v", "--no-strict", bundle.path]).status == 0
+    }
+
+    /// Allocated size of a single plain file (for non-bundle plugins).
+    static func fileSize(_ url: URL) -> Int64 {
+        let values = try? url.resourceValues(
+            forKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey])
+        return Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
     }
 
     static func directorySize(_ url: URL) -> Int64 {
