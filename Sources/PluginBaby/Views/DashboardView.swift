@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// The home screen: summary stat tiles, recently-added plugins, and the detail panel for the selected plugin.
 struct DashboardView: View {
     @Environment(AppModel.self) private var model
 
@@ -119,6 +120,9 @@ struct DashboardView: View {
             if model.isScanning || model.isValidatingAll {
                 ProgressView().controlSize(.small)
             }
+            Text(model.lastScanDescription)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textSecondary)
             Button { Task { await model.rescan() } } label: {
                 Label("Scan", systemImage: "arrow.clockwise")
             }

@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 
+/// The hub of the app. Holds the lists the UI shows (plugins, chains, archive)
+/// and the actions it triggers (rescan, archive, validate, edit chains). Views
+/// read from it and call its methods; it calls the Services. Start here.
 enum PluginSort: String, CaseIterable, Identifiable {
     case name = "Name"
     case manufacturer = "Manufacturer"
@@ -23,6 +26,17 @@ final class AppModel {
     var isScanning = false
     var lastError: String?
 
+    /// When the currently shown plugin list was scanned (from the cache or a
+    /// live scan). Nil until the first scan completes.
+    var lastScanDate: Date?
+
+    /// Set true on launch when the cached list is older than `staleAfterDays`,
+    /// so the UI can offer to rescan. The user can accept or keep the old list.
+    var showStaleScanPrompt = false
+
+    /// A cached list older than this (in days) is considered stale on launch.
+    let staleAfterDays = 30
+
     /// The plugin shown in the dashboard detail panel.
     var selectedPluginID: Plugin.ID?
 
@@ -41,18 +55,53 @@ final class AppModel {
     func initialLoad() async {
         chains = Persistence.shared.loadChains()
         archive = Persistence.shared.loadManifest()
-        await rescan()
+
+        // Prefer the cached list for an instant start. Only scan automatically
+        // on the very first run, when no cache exists yet. If the cache is old,
+        // flag it so the UI can ask whether to rescan.
+        if let cache = Persistence.shared.loadPluginCache() {
+            plugins = cache.plugins
+            lastScanDate = cache.scannedAt
+            refreshSelection()
+            if let age = cacheAgeDays, age >= staleAfterDays {
+                showStaleScanPrompt = true
+            }
+        } else {
+            await rescan()
+        }
     }
 
     func rescan() async {
         isScanning = true
         let scanned = await Task.detached { PluginScanner.scanAll() }.value
         plugins = scanned
-        // Keep a valid selection for the detail panel.
+        lastScanDate = Date()
+        Persistence.shared.savePluginCache(scanned, scannedAt: lastScanDate!)
+        refreshSelection()
+        isScanning = false
+    }
+
+    /// Keep a valid selection for the detail panel after the list changes.
+    private func refreshSelection() {
         if selectedPluginID == nil || !plugins.contains(where: { $0.id == selectedPluginID }) {
             selectedPluginID = filteredPlugins.first?.id
         }
-        isScanning = false
+    }
+
+    /// Age of the shown list in whole days, or nil if never scanned.
+    var cacheAgeDays: Int? {
+        guard let date = lastScanDate else { return nil }
+        return Calendar.current.dateComponents([.day], from: date, to: Date()).day
+    }
+
+    /// Short human description of when the list was last scanned.
+    var lastScanDescription: String {
+        guard let days = cacheAgeDays else { return "never scanned" }
+        switch days {
+        case 0: return "scanned today"
+        case 1: return "scanned yesterday"
+        default: return "scanned \(days) days ago"
+        }
     }
 
     // MARK: - Filtering / sorting

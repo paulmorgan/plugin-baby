@@ -9,6 +9,7 @@ struct Persistence {
     let samplesDir: URL
     let chainsFile: URL
     let manifestFile: URL
+    let pluginCacheFile: URL
 
     init() {
         let fm = FileManager.default
@@ -38,6 +39,7 @@ struct Persistence {
         samplesDir = chosen.appendingPathComponent("samples", isDirectory: true)
         chainsFile = chosen.appendingPathComponent("chains.json")
         manifestFile = chosen.appendingPathComponent("archive-manifest.json")
+        pluginCacheFile = chosen.appendingPathComponent("plugins-cache.json")
         try? fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         try? fm.createDirectory(at: samplesDir, withIntermediateDirectories: true)
     }
@@ -72,5 +74,32 @@ struct Persistence {
         if let data = try? encoder.encode(entries) {
             try? data.write(to: manifestFile, options: .atomic)
         }
+    }
+
+    // MARK: - Plugin list cache
+
+    /// The cached result of the last successful scan, plus when it was taken.
+    /// Loading from this lets the app start instantly without re-scanning.
+    private struct PluginCache: Codable {
+        var scannedAt: Date
+        var plugins: [Plugin]
+    }
+
+    func savePluginCache(_ plugins: [Plugin], scannedAt: Date) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(PluginCache(scannedAt: scannedAt, plugins: plugins)) {
+            try? data.write(to: pluginCacheFile, options: .atomic)
+        }
+    }
+
+    /// The last saved plugin list and its scan date, or nil if none exists yet.
+    func loadPluginCache() -> (plugins: [Plugin], scannedAt: Date)? {
+        guard let data = try? Data(contentsOf: pluginCacheFile) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let cache = try? decoder.decode(PluginCache.self, from: data) else { return nil }
+        return (cache.plugins, cache.scannedAt)
     }
 }

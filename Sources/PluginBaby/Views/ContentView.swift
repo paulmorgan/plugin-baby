@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// The window shell: a sidebar of the five sections and a detail area that
+/// swaps in one screen per section. The map of the whole UI.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case dashboard = "Dashboard"
     case catalog = "Plugins"
@@ -25,6 +27,8 @@ struct ContentView: View {
     @State private var selection: AppSection? = .dashboard
 
     var body: some View {
+        @Bindable var model = model
+
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 SidebarBrand()
@@ -63,5 +67,11 @@ struct ContentView: View {
             .background(Theme.background)
         }
         .tint(Theme.accent)
+        .alert("Your plugin list may be out of date", isPresented: $model.showStaleScanPrompt) {
+            Button("Scan Now") { Task { await model.rescan() } }
+            Button("Keep Current List", role: .cancel) { }
+        } message: {
+            Text("The saved list was \(model.lastScanDescription). Scan your plugin folders for changes?")
+        }
     }
 }
