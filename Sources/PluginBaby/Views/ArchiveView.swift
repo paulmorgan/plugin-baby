@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// The Archive screen: lists archived plugins and offers restore or permanent delete.
 struct ArchiveView: View {
     @Environment(AppModel.self) private var model
     @State private var selectedID: ArchiveEntry.ID?

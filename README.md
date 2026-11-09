@@ -81,6 +81,9 @@ from this list (so it still works if `~/Library/Application Support` is misconfi
 
 ## Project layout
 
+> **New to the code?** Start with [`docs/CODE-TOUR.md`](docs/CODE-TOUR.md) — a
+> guided, beginner-friendly walk through the source in reading order.
+
 ```
 Sources/PluginBaby/
   PluginBabyApp.swift        app entry
@@ -99,7 +102,9 @@ Sources/PluginBaby/
   Views/                     Catalog, Chains, Audition, Archive, ContentView
 Tools/MakeIcon.swift         generates the app icon
 Verify/main.swift            headless end-to-end check (scan + archive round-trip + render)
+Sources/CLAPBridge/          C shim + vendored CLAP headers for hosting CLAP plugins
 DESIGN.md                    design doc and locked decisions
+docs/CODE-TOUR.md            beginner's guided walk through the source
 ```
 
 ## Notes & limits

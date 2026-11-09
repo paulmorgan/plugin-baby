@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// App entry point. Creates the single `AppModel`, shows `ContentView`, and
+/// loads the plugin catalog on launch.
 @main
 struct PluginBabyApp: App {
     @State private var model = AppModel()

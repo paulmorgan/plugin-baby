@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// The Audition screen: pick a plugin, choose a sample, and play it through the audio engine with live visualizers.
 struct AuditionView: View {
     @Environment(AppModel.self) private var model
     @State private var selectedPluginID: Plugin.ID?

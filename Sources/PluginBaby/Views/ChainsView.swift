@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// The Chains screen: create named, ordered groups of plugins and edit their contents and notes.
 struct ChainsView: View {
     @Environment(AppModel.self) private var model
     @State private var newName = ""

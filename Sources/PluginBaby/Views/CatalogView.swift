@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+/// The Plugins screen: the full, searchable, filterable list of everything found, with its own detail panel.
 struct CatalogView: View {
     @Environment(AppModel.self) private var model
     @State private var selectedID: Plugin.ID?
