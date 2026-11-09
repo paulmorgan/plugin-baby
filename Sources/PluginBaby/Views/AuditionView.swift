@@ -68,11 +68,14 @@ struct AuditionView: View {
                 }
 
                 Button {
-                    model.audition.openEditor()
+                    if let id = selectedPluginID,
+                       let plugin = model.plugins.first(where: { $0.id == id }) {
+                        model.audition.openEditor(for: plugin)
+                    }
                 } label: {
                     Label("Open editor", systemImage: "slider.horizontal.3")
                 }
-                .disabled(!audition.canOpenEditor)
+                .disabled(selectedPluginID == nil)
             }
 
             Text(audition.statusMessage)

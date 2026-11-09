@@ -3,6 +3,7 @@ import AVFoundation
 import AudioToolbox
 import CoreAudioKit
 import AppKit
+import SwiftUI
 import Observation
 
 /// Hosts an Audio Unit for auditioning: effects process a sample in series,
@@ -46,6 +47,9 @@ final class AuditionEngine {
     private let analyzer = SpectrumAnalyzer(fftSize: 1024, bandCount: 28)
     private var metering = false
     private var clapBackend: CLAPAuditionBackend?
+    /// Identity of the plugin currently instantiated, so the editor and Preview
+    /// can share one instance (edits persist) and editing needs no prior Preview.
+    private var loadedPluginKey: String?
 
     /// URL of the sample currently loaded (bundled default or user-chosen).
     private(set) var sampleURL: URL?
@@ -92,11 +96,17 @@ final class AuditionEngine {
     }
 
     func loadPlugin(_ plugin: Plugin) {
+        // Already instantiated this exact AU (e.g. its editor is open)? Keep the
+        // same instance so edits persist and the editor stays wired to the audio.
+        if plugin.format == .audioUnit, audioUnit != nil, loadedPluginKey == plugin.identityKey {
+            return
+        }
         stop()
         closeEditor()
         clapBackend = nil
         clapParameters = []
         clapParamValues = [:]
+        loadedPluginKey = nil
 
         if plugin.format == .clap {
             loadCLAP(plugin)
@@ -119,7 +129,11 @@ final class AuditionEngine {
                     self.attach(unit)
                     self.loadedKind = kind
                     self.pluginLoaded = true
-                    self.canOpenEditor = unit.auAudioUnit.providesUserInterface
+                    self.loadedPluginKey = plugin.identityKey
+                    // Any loaded AU can attempt to open its editor; whether one
+                    // actually appears is decided when we request the view
+                    // controller (providesUserInterface is unreliable).
+                    self.canOpenEditor = true
                     let label = kind == .instrument ? "instrument" : "effect"
                     self.statusMessage = "Loaded \(plugin.name) (\(label))."
                 } else {
@@ -299,21 +313,80 @@ final class AuditionEngine {
 
     // MARK: - Plugin editor window
 
+    /// Open the editor for a specific plugin, loading it first if it isn't the
+    /// one already instantiated. Lets the user reach an AU's controls without
+    /// having to press Preview first.
+    func openEditor(for plugin: Plugin) {
+        guard plugin.format == .audioUnit else {
+            statusMessage = "CLAP controls appear as inline sliders; Audio Units use their own editor."
+            return
+        }
+        if audioUnit != nil, loadedPluginKey == plugin.identityKey {
+            openEditor()
+            return
+        }
+        guard let (description, kind) = AudioComponentDescriptionReader.description(for: plugin),
+              kind != .other else {
+            statusMessage = "\(plugin.name) can’t be hosted for editing."
+            return
+        }
+        statusMessage = "Opening \(plugin.name)…"
+        AVAudioUnit.instantiate(with: description, options: []) { [weak self] unit, error in
+            Task { @MainActor in
+                guard let self else { return }
+                guard let unit else {
+                    self.statusMessage = "Couldn’t load \(plugin.name): \(error?.localizedDescription ?? "unknown error")."
+                    return
+                }
+                self.attach(unit)
+                self.loadedKind = kind
+                self.pluginLoaded = true
+                self.loadedPluginKey = plugin.identityKey
+                self.canOpenEditor = true
+                self.openEditor()
+            }
+        }
+    }
+
     func openEditor() {
-        guard let unit = audioUnit, unit.auAudioUnit.providesUserInterface else {
-            statusMessage = "This plugin has no custom editor."
+        guard let unit = audioUnit else {
+            statusMessage = "Load a plugin first, then open its editor."
+            return
+        }
+        // An editor window already exists (possibly closed but retained)? Just
+        // resurface it. Re-requesting a view controller can return nil the second
+        // time — an AU vends its UI once — which would wrongly fall back to the
+        // generic editor.
+        if let window = editorWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
         unit.auAudioUnit.requestViewController { [weak self] controller in
             Task { @MainActor in
                 guard let self else { return }
-                guard let controller else {
-                    self.statusMessage = "This plugin has no custom editor."
-                    return
+                if let controller {
+                    self.presentEditor(controller)          // the plugin's own UI
+                } else {
+                    self.presentGenericEditor(for: unit)    // app-built parameter sliders
                 }
-                self.presentEditor(controller)
             }
         }
+    }
+
+    /// Fallback editor built from the AU's own parameter tree, for plugins that
+    /// provide no view controller we can host. Guarantees "Open editor" always
+    /// shows adjustable controls.
+    private func presentGenericEditor(for unit: AVAudioUnit) {
+        let params = unit.auAudioUnit.parameterTree?.allParameters ?? []
+        let name = unit.auAudioUnit.audioUnitName ?? "Plugin"
+        let view = AUParameterEditorView(title: name, parameters: params)
+        let controller = NSHostingController(rootView: view)
+        controller.preferredContentSize = NSSize(width: 380, height: params.isEmpty ? 160 : 440)
+        presentEditor(controller)
+        statusMessage = params.isEmpty
+            ? "\(name) has no adjustable parameters."
+            : "Editing \(params.count) parameter\(params.count == 1 ? "" : "s") (generic editor)."
     }
 
     private func presentEditor(_ controller: NSViewController) {
@@ -324,6 +397,10 @@ final class AuditionEngine {
         window.title = "Plugin Editor"
         window.styleMask = [.titled, .closable, .resizable]
         window.isReleasedWhenClosed = false
+        // Float above the main window so the editor stays in front while you
+        // audition, instead of slipping behind it.
+        window.level = .floating
+        window.hidesOnDeactivate = false
         applyEditorSize(to: window, from: controller)
         window.center()
         editorWindow = window

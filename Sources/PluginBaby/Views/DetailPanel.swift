@@ -83,6 +83,19 @@ struct DetailPanel: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
+
+            // Audio Units expose their controls through their own editor window.
+            // (CLAP plugins get inline sliders below instead.)
+            if plugin.format == .audioUnit {
+                Button {
+                    model.audition.openEditor(for: plugin)
+                } label: {
+                    Label("Open editor", systemImage: "slider.horizontal.3")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .help("Open this plugin’s own settings window")
+            }
         }
     }
 
