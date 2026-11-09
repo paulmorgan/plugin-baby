@@ -14,18 +14,24 @@ there is no account, no network, and no telemetry.
 
 **Catalog & search**
 Scans both `~/Library/Audio/Plug-Ins` (User) and `/Library/Audio/Plug-Ins` (System)
-for Audio Unit (`.component`), VST3, VST, and CLAP plugins. Shows name, manufacturer,
-format, **where** it lives (User/System), version, architecture (Intel / Apple
-Silicon / Universal), code-sign status, and size. Search and filter by format; reveal
-any plugin in Finder.
+for Audio Unit (`.component`), VST3, VST, and CLAP plugins — whether a plugin is a
+bundle or a plain dylib. Shows name, manufacturer, format, **where** it lives
+(User/System), version, architecture (Intel / Apple Silicon / Universal), code-sign
+status, and size. Search and filter by format; reveal any plugin in Finder. The
+catalog is **cached between launches** for an instant start, and offers to rescan when
+the saved list is more than 30 days old.
 
 **Audition**
-Load an **Audio Unit** and hear it:
-- **Effects** (`aufx`/`aumf`) process an audio sample you choose, with an A/B **bypass**
-  toggle.
-- **Instruments** (`aumu`) are played with a test MIDI note.
-- **Open editor** shows the plugin's own interface in its own window, sized to the
-  plugin's real UI.
+Load a plugin and hear it, with a live spectrum and level meters:
+- **Audio Unit effects** (`aufx`/`aumf`) process an audio sample — the bundled default,
+  or one you choose — with an A/B **bypass** toggle; **instruments** (`aumu`) play a
+  test MIDI note.
+- **CLAP effects and instruments** host through a bundled C shim, with **live parameter
+  sliders** the app builds from the plugin's own parameter list and writes on the audio
+  thread while it plays.
+- **Open editor** opens an Audio Unit's own interface in its own window. If a plugin
+  provides no editor of its own, the app builds a **generic parameter editor** from the
+  AU's parameter tree, so a plugin's controls are always reachable.
 
 **Chains / presets**
 Group plugins into named, ordered chains with notes, saved locally.
@@ -76,6 +82,7 @@ from this list (so it still works if `~/Library/Application Support` is misconfi
   chains.json             your chains
   archive/                archived plugin bundles
   archive-manifest.json   record of what's archived + where to restore it
+  plugins-cache.json      last good catalog scan (for an instant start)
   samples/                (reserved for saved audition samples)
 ```
 
@@ -109,22 +116,24 @@ docs/CODE-TOUR.md            beginner's guided walk through the source
 
 ## Notes & limits
 
-- Live auditioning covers **Audio Units** (effects and instruments) and, newly,
-  **CLAP** (effects and instruments) via a bundled C host shim — see
-  `docs/CLAP-AUDITION.md`. CLAP is ABI-verified against a reference plugin but
-  not yet tested against a commercial CLAP. VST3 hosting is still a later phase
+- Live auditioning covers **Audio Units** (effects and instruments) and **CLAP**
+  (effects and instruments, with app-drawn parameter sliders) via a bundled C host
+  shim — see `docs/CLAP-AUDITION.md`. CLAP is ABI-verified against a reference plugin
+  but not yet tested against a commercial CLAP. VST3 hosting is still a later phase
   (`docs/VST3-AUDITION.md`).
 - The app is **not sandboxed** (it must read and move files in the plugins folders), so
-  it isn't an App Store candidate — fine for personal use.
+  it isn't an App Store candidate — fine for personal use. It is a plugin host, so it
+  loads third-party plugin binaries (`dlopen`) by design.
 - Universal binaries, code-sign status, and architecture are read with `lipo` and
   `codesign`.
 
 ## Roadmap
 
-Done: catalog + search, chains, AU effect & instrument audition, plugin editor window,
-archive/restore/delete, System-domain support with admin-authorized moves, original
-electric theme and icon.
+Done: catalog + search with a cached plugin list, chains, AU effect & instrument
+audition, AU editor window with a generic parameter-tree fallback, CLAP effect &
+instrument audition with live parameter sliders, live spectrum + level metering, AU
+validation via `auval`, archive/restore/delete, System-domain support with
+admin-authorized moves, original electric theme and icon.
 
-Candidates next (see "what commercial apps do" discussion): AU validation via `auval`,
-crash-safe scanning, live metering/waveform in Audition, on-screen keyboard for
-instruments, favorites/tags/categories, hosting a whole chain live.
+Candidates next: VST3 hosting, crash-safe scanning, an on-screen keyboard for
+instruments, favorites/tags/categories, and hosting a whole chain live.
