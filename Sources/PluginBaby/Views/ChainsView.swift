@@ -27,7 +27,9 @@ struct ChainsView: View {
                     }
                 }
             }
-            .frame(minWidth: 240)
+            // Keep the chain list a compact column so the detail side has room
+            // to show each chain's plugins comfortably.
+            .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
 
             Group {
                 if let id = selectedChainID,
@@ -39,6 +41,7 @@ struct ChainsView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(minWidth: 380, maxWidth: .infinity)
         }
         .navigationTitle("Chains")
     }
